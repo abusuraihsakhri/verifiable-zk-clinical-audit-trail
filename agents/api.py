@@ -1,12 +1,14 @@
 """
 FastAPI REST API Server for Verifiable Zk Clinical Audit Trail.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from .base import AuditLogger, PHIGuard
 from .models import SystemTaskPayload, ConsensusDossier
 from .supervisor import SystemSupervisor
+from .metrics import GLOBAL_METRICS
 
 supervisor = SystemSupervisor(model_provider="mock")
 
@@ -26,13 +28,12 @@ def health():
     return {"status": "HEALTHY", "service": "verifiable-zk-clinical-audit-trail", "domain": "Post-Quantum Cryptography & Hardware Security", "standard": "NIST FIPS 203/204/205 / ISO/IEC 17825 Standards", "version": "3.0.0-ENTERPRISE"}
 
 
-@app.get("/metrics")
+@app.get("/metrics", response_class=PlainTextResponse)
 def metrics():
-    return {
-        "dossiers_processed_total": len(supervisor.dossier_registry),
-        "audit_blocks_total": len(AuditLogger.get_trail()),
-        "system_status": "NOMINAL_OPTIMAL"
-    }
+    """Prometheus-compatible metrics endpoint."""
+    GLOBAL_METRICS.tasks_total = len(supervisor.dossier_registry)
+    GLOBAL_METRICS.audit_blocks_total = len(AuditLogger.get_trail())
+    return GLOBAL_METRICS.export_prometheus_text()
 
 
 @app.post("/api/audit")
