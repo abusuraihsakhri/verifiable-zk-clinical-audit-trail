@@ -36,7 +36,7 @@ jobs:
           import re
           import subprocess
           html = Path("web/index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>", html, flags=re.I)
+          scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", html, flags=re.I)
           assert scripts, "No inline scripts found"
           for script in scripts:
               subprocess.run(["node", "--check"], input=script, text=True, check=True)
