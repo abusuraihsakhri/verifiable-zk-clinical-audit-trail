@@ -24,11 +24,14 @@ api = ["fastapi>=0.100,<1", "uvicorn>=0.20,<1"]
 test = ["pytest>=7,<10", "httpx>=0.24,<1"]
 
 [project.scripts]
-verifiable-zk-clinical-audit-trail = "zk_audit_trail.cli:main"
+verifiable-zk-clinical-audit-trail = "cli:main"
 
 [project.urls]
 Homepage = "https://github.com/abusuraihsakhri/verifiable-zk-clinical-audit-trail"
 Repository = "https://github.com/abusuraihsakhri/verifiable-zk-clinical-audit-trail.git"
+
+[tool.setuptools]
+py-modules = ["cli", "enrichment", "simulator"]
 
 [tool.setuptools.packages.find]
 include = ["agents*", "zk_audit_trail*"]
