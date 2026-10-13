@@ -1,194 +1,54 @@
 # Verifiable ZK Clinical Audit Trail
 
-> **Domain:** Post-Quantum Cryptography & Zero-Knowledge Architecture
-> **Reference Guidelines & Standards:** `NIST FIPS 203/204/205, NIST SP 800-90B & ISO/IEC Standards`
+This repository provides a **demonstration of rule-based task classification and an in-memory HMAC-SHA256 audit chain**. Despite its historical name, it does **not** currently implement zero-knowledge proofs, Merkle tree inclusion proofs, patient access authorization, persistent append-only storage, or certified HIPAA/NIST compliance. It must not be used to make clinical decisions or store identifiable patient information.
 
-<div align="center">
+## What works
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+- Three deterministic Python workers classify synthetic tasks using a primary metric threshold of **25**, a secondary metric threshold of **12**, a critical flag, and descriptor keywords.
+- A supervisor aggregates alerts into a dossier and records hashed task metadata in an in-memory HMAC-SHA256 chain.
+- Verification recomputes record HMACs and validates predecessor links. It detects in-memory changes to existing entries, but **cannot detect a truncated history after process restart**, verify original clinical content, or attest the chain without an external trust anchor.
+- A CLI supports individual evaluations, CSV batch jobs, status queries, and audit verification. A FastAPI service supports audit and chat endpoints plus metrics.
+- `web/index.html` is a self-contained **JavaScript-only demonstration** of the alert classification rules; it does not connect to FastAPI or create cryptographic evidence. The `.github/workflows/pages.yml` workflow publishes this page when GitHub Pages is enabled.
 
-</div>
+## Browser demonstration
 
----
+Open `web/index.html` in a current desktop or mobile browser, or use the GitHub Pages deployment if available. Enter **only synthetic examples**, select **Evaluate**, and optionally export local demonstration results as JSON. Results exist only in the current tab's memory and are cleared on refresh; there are no external APIs, trackers, or fonts. The page does not require Pyodide, Python, or network access.
 
-## 📖 What It Does
+## Local Python usage
 
-**Verifiable ZK Clinical Audit Trail** is an advanced analytical and computational platform implementing Merkle tree zero-knowledge EHR access inclusion & HIPAA audit trail prover. It provides:
-
-- **Multi-Agent Consensus**: Three specialized workers (InvariantQC, SafetyEscalation, ProtocolConformance) evaluate tasks and produce consensus dossiers.
-- **Tamper-Evident Audit Trail**: HMAC-SHA256 chained cryptographic ledger for every evaluation and state transition.
-- **Zero-PHI Outbound Guard**: Active regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers from outbound data.
-- **FastAPI REST API**: OpenAPI 3.1 endpoints with Prometheus telemetry (`/metrics`).
-- **Enrichment Suite**: Eight domain-specific engines for ZK-SNARK proofs, HIPAA compliance, clinical trial data sharing, and more.
-
----
-
-## ⚙️ Key Capabilities & Algorithmic Modules
-
-- **Deterministic Calculation Engine**: Strict compliance with standard reference formulations and thresholds.
-- **Risk & Urgency Classification**: Multi-tier categorization (ROUTINE, ELEVATED_RISK, CRITICAL_STAT_PANIC) with automated clinical/operational action recommendations.
-- **Validation & Guardrails**: Rigorous input bounds checking and anomaly detection.
-- **Prometheus Metrics**: Operational telemetry for monitoring task throughput, alert rates, and audit chain growth.
-
----
-
-## 💻 CLI Quickstart & Usage
-
-### Installation
+Requires Python 3.10 or newer.
 
 ```bash
-pip install -e .
+python -m pip install -e ".[api,test]"
+verifiable-zk-clinical-audit-trail audit --task-id DEMO-001 --target SYNTHETIC --primary 28.5 --secondary 14.2 --status DISCORDANT
+verifiable-zk-clinical-audit-trail batch -i sample.csv -o results.csv
+verifiable-zk-clinical-audit-trail verify-audit
+python -m pytest -q
 ```
 
-### 1. Run Single Audit Task
-```bash
-python cli.py audit --task-id TASK-001 --target KEY-01 --primary 28.5 --secondary 14.2 --critical --status DISCORDANT
-```
+The alternate `zk_audit_trail` Python package is retained for compatibility. It provides a separate threshold evaluator, **not** cryptographic ZK proof generation.
 
-### 2. Interactive Chat Query
-```bash
-python cli.py chat "What is the system status?"
-```
+## API and configuration
 
-### 3. Batch Process CSV Records
-```bash
-python cli.py batch -i sample.csv -o results.csv
-```
-
-### 4. Verify Audit Trail Integrity
-```bash
-python cli.py verify-audit
-```
-
-### 5. Launch REST API Server
-```bash
-python cli.py serve --host 127.0.0.1 --port 8000
-```
-
-### Parameter Reference
-| Argument | Description | Default |
-|:---------|:------------|:--------|
-| `--task-id` | Unique task/case identifier | `TASK-2026-001` |
-| `--target` | Entity, patient key, or target identifier | `KEY-TARGET-01` |
-| `--primary` | Primary domain measurement or score | `28.5` |
-| `--secondary` | Secondary kinetic or confidence score | `14.2` |
-| `--critical` | Emergency escalation flag | `False` |
-| `--status` | Status code or phenotype descriptor | `DISCORDANT` |
-
-### Input Data Schema (CSV)
-
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `task_id` | Unique task/case identifier | Required |
-| `target_identifier` | Entity or target identifier | Required |
-| `primary_metric` | Primary domain measurement | Required |
-| `secondary_metric` | Secondary kinetic score | Optional (default: 5.0) |
-| `is_critical_flag` | Emergency escalation flag | Optional (default: False) |
-| `status_descriptor` | Status code or phenotype | Optional (default: NOMINAL) |
-
----
-
-## 🛡️ Security & Enterprise Architecture
-
-* **Zero-PHI Outbound Interceptor:** Active regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
-* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
-* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
-* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
-* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
-
-### Security Configuration
-
-Set the `AUDIT_SECRET_KEY` environment variable to a strong random value in production:
+Start the API with `verifiable-zk-clinical-audit-trail serve` (defaults to localhost, port 8000). For a stable signing key, set `AUDIT_SECRET_KEY` to a randomly generated secret stored outside the repository. Without one, the application warns and uses an **ephemeral random key**; prior chain state is not preserved across processes.
 
 ```bash
-# Linux/macOS
 export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-
-# Windows PowerShell
-$env:AUDIT_SECRET_KEY = -join ((1..32 | ForEach-Object { Get-Random -Max 16 }).ForEach({ "{0:x}" -f $_ }))
+export AUDIT_READ_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+verifiable-zk-clinical-audit-trail serve
 ```
 
-**Warning:** If `AUDIT_SECRET_KEY` is not set, the system will emit a runtime warning and use an insecure default. Never run in production without setting this variable.
+- `POST /api/audit`: classify a task and add hashed metadata to the process-local chain.
+- `POST /api/chat`: deterministic mock response; no remote language model is contacted.
+- `GET /health`, `GET /metrics`: service status and operational counts.
+- `GET /api/audit/logs`: disabled unless `AUDIT_READ_TOKEN` is configured; requires `Authorization: Bearer <token>`.
 
----
+**Privacy and security limits:** Regex filtering catches some common identifiers but is not a comprehensive de-identification method. Avoid raw clinical data. API requests and responses can contain supplied target IDs, and the audit chain is not durable. Do not expose the FastAPI application directly to the public internet without access control, TLS, storage, threat modeling, and further security review.
 
-## 🧪 Testing & Verification
+## Container and CI
 
-Run the automated test suite:
+The `Dockerfile` installs the declared `[api]` dependencies. `docker compose up --build` requires `AUDIT_SECRET_KEY`; Compose publishes the API only to `127.0.0.1:8000`. GitHub Actions checks Python package installation, compile checks, browser JavaScript syntax, CLI smoke tests, and pytest on supported Python versions.
 
-```bash
-pytest -v
-```
+## License
 
-Execute high-throughput batch simulation benchmarks:
-
-```bash
-python simulator.py 1000
-```
-
----
-
-## 🐳 Container Deployment
-
-```bash
-docker build -t verifiable-zk-clinical-audit-trail .
-docker run -p 8000:8000 -e AUDIT_SECRET_KEY=your-secret-key verifiable-zk-clinical-audit-trail
-```
-
-Or using Docker Compose:
-
-```bash
-AUDIT_SECRET_KEY=your-secret-key docker-compose up -d
-```
-
----
-
-## 📁 Project Structure
-
-```
-verifiable-zk-clinical-audit-trail/
-├── agents/                    # Core multi-agent system
-│   ├── __init__.py           # Package version
-│   ├── api.py                # FastAPI REST server
-│   ├── base.py               # Security, PHI guard, HMAC audit trail
-│   ├── learning.py           # Bayesian calibration engine
-│   ├── llm_factory.py        # LLM provider factory
-│   ├── metrics.py            # Prometheus metrics collector
-│   ├── models.py             # Pydantic data models
-│   ├── streamer.py           # WebSocket telemetry broadcaster
-│   ├── supervisor.py         # Master orchestrator
-│   └── workers.py            # Specialized domain workers
-├── zk_audit_trail/           # ZK-AuditTrail sub-package
-│   ├── __init__.py
-│   ├── agents.py             # Merkle tree & ZK proof agents
-│   ├── cli.py                # CLI for ZK-AuditTrail
-│   ├── engine.py             # Core algorithmic engine
-│   ├── models.py             # Data models
-│   └── server.py             # FastAPI server factory
-├── tests/                    # Pytest test suite
-│   ├── test_verifiable_zk_clinical_audit_trail.py
-│   ├── test_enrichment.py
-│   └── test_zk_audit_trail.py
-├── cli.py                    # Main CLI entry point
-├── enrichment.py             # Domain enrichment engines
-├── simulator.py              # High-throughput stress tester
-├── sample.csv                # Sample batch input
-├── sample_payload.json       # Sample API payload
-├── benchmark_dataset.json    # Golden benchmark test cases
-├── openapi_spec.json         # OpenAPI 3.1 specification
-├── Dockerfile                # Container build config
-├── docker-compose.yml        # Multi-container orchestration
-├── pyproject.toml            # Python package metadata
-└── README.md                 # This file
-```
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT, as specified in [LICENSE](LICENSE).
