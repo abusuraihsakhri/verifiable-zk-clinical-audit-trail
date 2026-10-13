@@ -8,6 +8,9 @@ import json
 import time
 import hmac
 import hashlib
+import secrets
+import copy
+import threading
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
@@ -55,53 +58,74 @@ class PHIGuard:
 
 
 class AuditTrail:
-    """Cryptographic Tamper-Evident HMAC-SHA256 Audit Trail."""
+    """In-memory HMAC-SHA256 hash chain; not a durable or zero-knowledge proof."""
+
+    GENESIS = "GENESIS_BLOCK_0000000000000000"
+
     def __init__(self, secret_key: Optional[str] = None):
-        resolved_key = secret_key or os.getenv("AUDIT_SECRET_KEY")
+        resolved_key = secret_key if secret_key is not None else os.getenv("AUDIT_SECRET_KEY")
         if not resolved_key:
             import warnings
             warnings.warn(
-                "AUDIT_SECRET_KEY not set; using insecure default. "
-                "Set AUDIT_SECRET_KEY env var in production.",
+                "AUDIT_SECRET_KEY not set; using an ephemeral random key. "
+                "Set AUDIT_SECRET_KEY for a stable deployment key.",
                 RuntimeWarning,
                 stacklevel=2,
             )
-            resolved_key = "INSECURE-DEFAULT-CHANGE-ME"
+            resolved_key = secrets.token_hex(32)
         self.secret_key = resolved_key.encode("utf-8")
         self.logs: List[Dict[str, Any]] = []
+        self._lock = threading.RLock()
+
+    def _signature(self, entry: Dict[str, Any]) -> str:
+        message = "|".join(str(entry[key]) for key in (
+            "audit_id", "timestamp", "actor", "actor_tier",
+            "event_type", "payload_hash", "prev_hash",
+        ))
+        return hmac.new(self.secret_key, message.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def log(self, actor: str, actor_tier: str, event_type: str, details: Dict[str, Any]) -> Dict[str, Any]:
-        payload_str = json.dumps(details, sort_keys=True)
+        # Metadata is exposed via audit reads; refuse obvious identifiers there too.
+        for value in (actor, actor_tier, event_type):
+            assert_no_phi(str(value))
+        payload_str = json.dumps(details, sort_keys=True, allow_nan=False)
         assert_no_phi(payload_str)
         payload_hash = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
-        audit_id = f"AUDIT-{int(time.time()*1000)}-{len(self.logs)+1}"
-        ts = datetime.now(timezone.utc).isoformat()
-        prev_hash = self.logs[-1]["current_hash"] if self.logs else "GENESIS_BLOCK_0000000000000000"
-        sign_string = f"{audit_id}|{ts}|{actor}|{actor_tier}|{event_type}|{payload_hash}|{prev_hash}"
-        signature = hmac.new(self.secret_key, sign_string.encode("utf-8"), hashlib.sha256).hexdigest()
-        entry = {
-            "audit_id": audit_id,
-            "timestamp": ts,
-            "actor": actor,
-            "actor_tier": actor_tier,
-            "event_type": event_type,
-            "payload_hash": payload_hash,
-            "prev_hash": prev_hash,
-            "current_hash": signature,
-        }
-        self.logs.append(entry)
-        return entry
+        with self._lock:
+            audit_id = f"AUDIT-{int(time.time()*1000)}-{len(self.logs)+1}"
+            ts = datetime.now(timezone.utc).isoformat()
+            prev_hash = self.logs[-1]["current_hash"] if self.logs else self.GENESIS
+            entry = {
+                "audit_id": audit_id,
+                "timestamp": ts,
+                "actor": actor,
+                "actor_tier": actor_tier,
+                "event_type": event_type,
+                "payload_hash": payload_hash,
+                "prev_hash": prev_hash,
+            }
+            entry["current_hash"] = self._signature(entry)
+            self.logs.append(entry)
+            return copy.deepcopy(entry)
 
     def verify_integrity(self) -> bool:
-        for i, entry in enumerate(self.logs):
-            prev = self.logs[i-1]["current_hash"] if i > 0 else "GENESIS_BLOCK_0000000000000000"
-            if entry["prev_hash"] != prev:
+        """Verify predecessor links AND each record's HMAC with a constant-time compare."""
+        with self._lock:
+            previous = self.GENESIS
+            try:
+                for entry in self.logs:
+                    if entry["prev_hash"] != previous:
+                        return False
+                    if not hmac.compare_digest(entry["current_hash"], self._signature(entry)):
+                        return False
+                    previous = entry["current_hash"]
+            except (KeyError, TypeError, ValueError, AttributeError):
                 return False
-        return True
+            return True
 
     def get_trail(self) -> List[Dict[str, Any]]:
-        return self.logs
-
+        with self._lock:
+            return copy.deepcopy(self.logs)
 
 GLOBAL_AUDIT = AuditTrail()
 
