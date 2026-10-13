@@ -1,40 +1,53 @@
-name: Verifiable Zk Clinical Audit Trail CI/CD & Security Verification
+name: Test Python package and browser demo
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master, main]
   pull_request:
-    branches: [ master, main ]
+    branches: [master, main]
+
+permissions:
+  contents: read
 
 jobs:
   test-and-audit:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install fastapi uvicorn pydantic pytest
-
-    - name: Run Pytest Suite
-      run: |
-        pytest -v
-
-    - name: Security SAST & Zero-PHI Audit
-      run: |
-        python -c "
-        from agents.base import PHIGuard, AuditLogger
-        import pytest
-        assert AuditLogger.verify_integrity() is True
-        print('Security & Zero-PHI Audit Passed!')
-        "
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install application and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[api,test]"
+          python -m pip check
+      - name: Compile Python modules
+        run: python -m compileall -q agents zk_audit_trail cli.py enrichment.py simulator.py
+      - name: Validate standalone browser JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+          html = Path("web/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", html, flags=re.I)
+          assert scripts, "No inline scripts found"
+          for script in scripts:
+              subprocess.run(["node", "--check"], input=script, text=True, check=True)
+          PY
+      - name: Run test suite
+        env:
+          AUDIT_SECRET_KEY: test-only-not-for-deployment
+        run: python -m pytest -q
+      - name: Verify CLI smoke tests
+        env:
+          AUDIT_SECRET_KEY: test-only-not-for-deployment
+        run: |
+          verifiable-zk-clinical-audit-trail audit --task-id CI-001 --target SYNTHETIC --primary 2 --secondary 1 --status NOMINAL
+          verifiable-zk-clinical-audit-trail verify-audit

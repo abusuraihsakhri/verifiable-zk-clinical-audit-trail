@@ -1,8 +1,10 @@
 """
 FastAPI REST API Server for Verifiable Zk Clinical Audit Trail.
 """
-from typing import Dict, Any
-from fastapi import FastAPI, HTTPException
+import hmac
+import os
+from typing import Dict, Any, Optional
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from .base import AuditLogger, PHIGuard
@@ -52,5 +54,11 @@ def api_chat(req: ChatRequest):
 
 
 @app.get("/api/audit/logs")
-def api_audit_logs():
+def api_audit_logs(authorization: Optional[str] = Header(default=None)):
+    """Audit metadata requires a separately configured bearer token."""
+    token = os.getenv("AUDIT_READ_TOKEN")
+    if not token:
+        raise HTTPException(status_code=503, detail="Audit log access is not configured")
+    if not authorization or not hmac.compare_digest(authorization, f"Bearer {token}"):
+        raise HTTPException(status_code=403, detail="Audit log access denied")
     return {"audit_trail": AuditLogger.get_trail(), "verified": AuditLogger.verify_integrity()}
